@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ros_marvelmind_package</name>
+  <version>1.0.0</version>
+  <description>Metapackage for Marvelmind ROS2</description>
+  <maintainer email="tejas.kumar.shastha@ipa.fraunhofer.de">ipa-kut</maintainer>
+  <license>BSD</license>
+
+  <exec_depend>marvelmind_interfaces</exec_depend>
+  <exec_depend>marvelmind_nav</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
