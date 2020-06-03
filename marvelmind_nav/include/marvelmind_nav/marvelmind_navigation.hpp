@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <chrono>
 
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
@@ -47,8 +48,9 @@ extern "C"
 class MarvelmindNavigation : public rclcpp_lifecycle::LifecycleNode
 {
 public:
-  explicit MarvelmindNavigation(const std::string & node_name, bool intra_process_comms)
-  : rclcpp_lifecycle::LifecycleNode(node_name, rclcpp::NodeOptions().use_intra_process_comms(intra_process_comms))
+  explicit MarvelmindNavigation(const std::string & node_name,int argc, char **argv, bool intra_process_comms=false)
+  : rclcpp_lifecycle::LifecycleNode(node_name, rclcpp::NodeOptions().use_intra_process_comms(intra_process_comms)),
+      argc_(argc),argv_(argv)
 {}
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_activate(const rclcpp_lifecycle::State &);
   rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn on_deactivate(const rclcpp_lifecycle::State &);
@@ -59,11 +61,15 @@ public:
 ~MarvelmindNavigation() {}
 
 private:
+  int argc_;
+  char **argv_;
+  std::shared_ptr<rclcpp::TimerBase> timer_;
+
   struct MarvelmindHedge * hedge= NULL;
   struct timespec ts;
 
   static uint32_t hedge_timestamp_prev;
-  static sem_t *sem;
+//  static sem_t *sem;
 
   marvelmind_interfaces::msg::HedgePos hedge_pos_noaddress_msg;// hedge coordinates message (old version without address) for publishing to ROS topic
   marvelmind_interfaces::msg::HedgePosA hedge_pos_msg;// hedge coordinates message for publishing to ROS topic
@@ -76,8 +82,43 @@ private:
   marvelmind_interfaces::msg::HedgeQuality hedge_quality_msg;// Quality message for publishing to ROS topic
   marvelmind_interfaces::msg::MarvelmindWaypoint marvelmind_waypoint_msg;// Waypoint message for publishing to ROS topic
 
-  void semCallback();
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgePosAng>> hedge_pos_ang_publisher_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgePosA>> hedge_pos_publisher_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgePos>> hedge_pos_noaddress_publisher_;
 
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::BeaconPosA>> beacons_pos_publisher_;
+
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgeImuRaw>> hedge_imu_raw_publisher_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgeImuFusion>> hedge_imu_fusion_publisher_;
+
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::BeaconDistance>> beacon_distance_publisher_;
+
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgeTelemetry>> hedge_telemetry_publisher_;
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::HedgeQuality>> hedge_quality_publisher_;
+
+  std::shared_ptr<rclcpp_lifecycle::LifecyclePublisher<marvelmind_interfaces::msg::MarvelmindWaypoint>> marvelmind_waypoint_publisher_;
+
+
+
+//  Marvelmind internal functions
+  int hedgeReceivePrepare();
+  bool hedgeReceiveCheck();
+  bool beaconReceiveCheck();
+  bool hedgeIMURawReceiveCheck();
+  bool hedgeIMUFusionReceiveCheck();
+  void getRawDistance(uint8_t index);
+  bool hedgeTelemetryUpdateCheck();
+  bool hedgeQualityUpdateCheck();
+  bool marvelmindWaypointUpdateCheck();
+
+// LC node functions
+  void activateAllPublishers();
+  void createPublishers();
+  void deactivateAllPublishers();
+  void resetAllPublishers();
+  void setMessageDefaults();
+
+  void main_loop();
 
 };
 

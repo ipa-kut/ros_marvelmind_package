@@ -1,42 +1,412 @@
 #include "marvelmind_nav/marvelmind_navigation.hpp"
 
 uint32_t MarvelmindNavigation::hedge_timestamp_prev = 0;
-sem_t *MarvelmindNavigation::sem = nullptr;
+static sem_t *sem;
+void semCallback()
+{
+    sem_post(sem);
+}
+
+
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MarvelmindNavigation::on_activate(const rclcpp_lifecycle::State &)
 {
- return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Configuring at " << this->now().seconds());
+    activateAllPublishers();
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MarvelmindNavigation::on_deactivate(const rclcpp_lifecycle::State &)
 {
-return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Configuring at " << this->now().seconds());
+    deactivateAllPublishers();
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MarvelmindNavigation::on_error(const rclcpp_lifecycle::State &)
 {
-return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Configuring at " << this->now().seconds());
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MarvelmindNavigation::on_cleanup(const rclcpp_lifecycle::State &)
 {
-return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Configuring at " << this->now().seconds());
+    resetAllPublishers();
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
+
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MarvelmindNavigation::on_configure(const rclcpp_lifecycle::State &)
 {
-return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Configuring at " << this->now().seconds());
+
+    sem = sem_open(DATA_INPUT_SEMAPHORE, O_CREAT, 0777, 0);
+
+    hedgeReceivePrepare();
+    createPublishers();
+    setMessageDefaults();
+
+    timer_ = this->create_wall_timer(std::chrono::duration<double>(0.005)
+                ,std::bind(&MarvelmindNavigation::main_loop, this));
+
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
 rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn MarvelmindNavigation::on_shutdown(const rclcpp_lifecycle::State &)
 {
-  return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
+    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Configuring at " << this->now().seconds());
+    return rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn::SUCCESS;
 }
 
-void MarvelmindNavigation::semCallback()
+int MarvelmindNavigation::hedgeReceivePrepare()
 {
-  sem_post(sem);
+    // get port name from command line arguments (if specified)
+    const char * ttyFileName;
+    uint32_t baudRate;
+    if (argc_>=2) ttyFileName=argv_[1];
+    else ttyFileName=DEFAULT_TTY_FILENAME;
+    if (argc_>=3) baudRate= atoi(argv_[2]);
+    else baudRate=DEFAULT_TTY_BAUDRATE;
+
+    // Init
+    hedge=createMarvelmindHedge ();
+    if (hedge==NULL)
+    {
+        RCLCPP_INFO(get_logger(),"Error: Unable to create MarvelmindHedge");
+        return -1;
+    }
+    hedge->ttyFileName=ttyFileName;
+    hedge->baudRate= baudRate;
+    hedge->verbose=true; // show errors and warnings
+    hedge->anyInputPacketCallback= semCallback;
+    startMarvelmindHedge (hedge);
+    return 1;
+}
+
+bool MarvelmindNavigation::hedgeReceiveCheck()
+{
+    if (hedge->haveNewValues_)
+    {
+        struct PositionValue position;
+        getPositionFromMarvelmindHedge (hedge, &position);
+
+        hedge_pos_msg.address= position.address;
+        hedge_pos_ang_msg.address= position.address;
+
+        hedge_pos_msg.flags= position.flags;
+        hedge_pos_noaddress_msg.flags= position.flags;
+        hedge_pos_ang_msg.flags= position.flags;
+        if (hedge_pos_msg.flags&(1<<1))// flag of timestamp format
+        {
+            hedge_pos_msg.timestamp_ms= position.timestamp;// msec
+            hedge_pos_noaddress_msg.timestamp_ms= position.timestamp;
+        }
+        else
+        {
+            hedge_pos_msg.timestamp_ms= position.timestamp*15.625;// alpha-cycles ==> msec
+            hedge_pos_noaddress_msg.timestamp_ms= position.timestamp*15.625;
+        }
+        hedge_pos_ang_msg.timestamp_ms= position.timestamp;
+
+        hedge_pos_msg.x_m= position.x/1000.0;
+        hedge_pos_msg.y_m= position.y/1000.0;
+        hedge_pos_msg.z_m= position.z/1000.0;
+
+        hedge_pos_noaddress_msg.x_m= position.x/1000.0;
+        hedge_pos_noaddress_msg.y_m= position.y/1000.0;
+        hedge_pos_noaddress_msg.z_m= position.z/1000.0;
+
+        hedge_pos_ang_msg.x_m= position.x/1000.0;
+        hedge_pos_ang_msg.y_m= position.y/1000.0;
+        hedge_pos_ang_msg.z_m= position.z/1000.0;
+
+        hedge_pos_ang_msg.angle= position.angle;
+
+        hedge->haveNewValues_=false;
+
+        return true;
+    }
+    return false;
+}
+
+bool MarvelmindNavigation::beaconReceiveCheck()
+{
+    uint8_t i;
+    struct StationaryBeaconsPositions positions;
+    struct StationaryBeaconPosition *bp= NULL;
+    bool foundUpd= false;
+    uint8_t n;
+
+    getStationaryBeaconsPositionsFromMarvelmindHedge (hedge, &positions);
+    n= positions.numBeacons;
+    if (n == 0)
+        return false;
+
+    for(i=0;i<n;i++)
+    {
+        bp= &positions.beacons[i];
+        if (bp->updatedForMsg)
+        {
+            clearStationaryBeaconUpdatedFlag(hedge, bp->address);
+            foundUpd= true;
+            break;
+        }
+    }
+    if (!foundUpd)
+        return false;
+    if (bp == NULL)
+        return false;
+
+    beacon_pos_msg.address= bp->address;
+    beacon_pos_msg.x_m= bp->x/1000.0;
+    beacon_pos_msg.y_m= bp->y/1000.0;
+    beacon_pos_msg.z_m= bp->z/1000.0;
+
+    return true;
+}
+
+bool MarvelmindNavigation::hedgeIMURawReceiveCheck()
+{
+    if (!hedge->rawIMU.updated)
+        return false;
+
+    hedge_imu_raw_msg.acc_x= hedge->rawIMU.acc_x;
+    hedge_imu_raw_msg.acc_y= hedge->rawIMU.acc_y;
+    hedge_imu_raw_msg.acc_z= hedge->rawIMU.acc_z;
+
+    hedge_imu_raw_msg.gyro_x= hedge->rawIMU.gyro_x;
+    hedge_imu_raw_msg.gyro_y= hedge->rawIMU.gyro_y;
+    hedge_imu_raw_msg.gyro_z= hedge->rawIMU.gyro_z;
+
+    hedge_imu_raw_msg.compass_x= hedge->rawIMU.compass_x;
+    hedge_imu_raw_msg.compass_y= hedge->rawIMU.compass_y;
+    hedge_imu_raw_msg.compass_z= hedge->rawIMU.compass_z;
+
+    hedge_imu_raw_msg.timestamp_ms= hedge->rawIMU.timestamp;
+
+    hedge->rawIMU.updated= false;
+
+    return true;
+
+}
+
+bool MarvelmindNavigation::hedgeIMUFusionReceiveCheck()
+{
+    if (!hedge->fusionIMU.updated)
+        return false;
+
+    hedge_imu_fusion_msg.x_m= hedge->fusionIMU.x/1000.0;
+    hedge_imu_fusion_msg.y_m= hedge->fusionIMU.y/1000.0;
+    hedge_imu_fusion_msg.z_m= hedge->fusionIMU.z/1000.0;
+
+    hedge_imu_fusion_msg.qw= hedge->fusionIMU.qw/10000.0;
+    hedge_imu_fusion_msg.qx= hedge->fusionIMU.qx/10000.0;
+    hedge_imu_fusion_msg.qy= hedge->fusionIMU.qy/10000.0;
+    hedge_imu_fusion_msg.qz= hedge->fusionIMU.qz/10000.0;
+
+    hedge_imu_fusion_msg.vx= hedge->fusionIMU.vx/1000.0;
+    hedge_imu_fusion_msg.vy= hedge->fusionIMU.vy/1000.0;
+    hedge_imu_fusion_msg.vz= hedge->fusionIMU.vz/1000.0;
+
+    hedge_imu_fusion_msg.ax= hedge->fusionIMU.ax/1000.0;
+    hedge_imu_fusion_msg.ay= hedge->fusionIMU.ay/1000.0;
+    hedge_imu_fusion_msg.az= hedge->fusionIMU.az/1000.0;
+
+    hedge_imu_fusion_msg.timestamp_ms= hedge->fusionIMU.timestamp;
+
+    hedge->fusionIMU.updated= false;
+
+    return true;
+}
+
+void MarvelmindNavigation::getRawDistance(uint8_t index)
+{
+    beacon_raw_distance_msg.address_hedge= hedge->rawDistances.address_hedge;
+    beacon_raw_distance_msg.address_beacon= hedge->rawDistances.distances[index].address_beacon;
+    beacon_raw_distance_msg.distance_m= hedge->rawDistances.distances[index].distance/1000.0;
+}
+
+bool MarvelmindNavigation::hedgeTelemetryUpdateCheck()
+{
+    if (!hedge->telemetry.updated)
+        return false;
+
+    hedge_telemetry_msg.battery_voltage= hedge->telemetry.vbat_mv/1000.0;
+    hedge_telemetry_msg.rssi_dbm= hedge->telemetry.rssi_dbm;
+
+    hedge->telemetry.updated= false;
+    return true;
+}
+
+bool MarvelmindNavigation::hedgeQualityUpdateCheck()
+{
+    if (!hedge->quality.updated)
+        return false;
+
+    hedge_quality_msg.address= hedge->quality.address;
+    hedge_quality_msg.quality_percents= hedge->quality.quality_per;
+
+    hedge->quality.updated= false;
+    return true;
+}
+
+bool MarvelmindNavigation::marvelmindWaypointUpdateCheck()
+{
+    uint8_t i,n;
+    uint8_t nUpdated;
+
+    if (!hedge->waypoints.updated)
+        return false;
+
+    nUpdated= 0;
+    n= hedge->waypoints.numItems;
+    for(i=0;i<n;i++)
+    {
+        if (!hedge->waypoints.items[i].updated)
+            continue;
+
+        nUpdated++;
+        if (nUpdated == 1)
+        {
+            marvelmind_waypoint_msg.total_items= n;
+            marvelmind_waypoint_msg.item_index= i;
+
+            marvelmind_waypoint_msg.movement_type= hedge->waypoints.items[i].movementType;
+            marvelmind_waypoint_msg.param1= hedge->waypoints.items[i].param1;
+            marvelmind_waypoint_msg.param2= hedge->waypoints.items[i].param2;
+            marvelmind_waypoint_msg.param3= hedge->waypoints.items[i].param3;
+
+            hedge->waypoints.items[i].updated= false;
+        }
+    }
+
+    if (nUpdated==1)
+    {
+        hedge->waypoints.updated= false;
+    }
+    return (nUpdated>0);
+}
+
+void MarvelmindNavigation::activateAllPublishers()
+{
+    hedge_pos_ang_publisher_->on_activate();
+    hedge_pos_publisher_->on_activate();
+    hedge_pos_noaddress_publisher_->on_activate();
+    beacons_pos_publisher_->on_activate();
+    hedge_imu_raw_publisher_->on_activate();
+    hedge_imu_fusion_publisher_->on_activate();
+    beacon_distance_publisher_->on_activate();
+    hedge_telemetry_publisher_->on_activate();
+    hedge_quality_publisher_->on_activate();
+    marvelmind_waypoint_publisher_->on_activate();
+}
+
+void MarvelmindNavigation::deactivateAllPublishers()
+{
+    hedge_pos_ang_publisher_->on_deactivate();
+    hedge_pos_publisher_->on_deactivate();
+    hedge_pos_noaddress_publisher_->on_deactivate();
+    beacons_pos_publisher_->on_deactivate();
+    hedge_imu_raw_publisher_->on_deactivate();
+    hedge_imu_fusion_publisher_->on_deactivate();
+    beacon_distance_publisher_->on_deactivate();
+    hedge_telemetry_publisher_->on_deactivate();
+    hedge_quality_publisher_->on_deactivate();
+    marvelmind_waypoint_publisher_->on_deactivate();
+}
+
+void MarvelmindNavigation::resetAllPublishers()
+{
+    hedge_pos_ang_publisher_.reset();
+    hedge_pos_publisher_.reset();
+    hedge_pos_noaddress_publisher_.reset();
+    beacons_pos_publisher_.reset();
+    hedge_imu_raw_publisher_.reset();
+    hedge_imu_fusion_publisher_.reset();
+    beacon_distance_publisher_.reset();
+    hedge_telemetry_publisher_.reset();
+    hedge_quality_publisher_.reset();
+    marvelmind_waypoint_publisher_.reset();
+}
+
+void MarvelmindNavigation::setMessageDefaults()
+{
+    // default values for position message
+    hedge_pos_ang_msg.address= 0;
+    hedge_pos_ang_msg.timestamp_ms = 0;
+    hedge_pos_ang_msg.x_m = 0.0;
+    hedge_pos_ang_msg.y_m = 0.0;
+    hedge_pos_ang_msg.z_m = 0.0;
+    hedge_pos_ang_msg.flags = (1<<0);// 'data not available' flag
+    hedge_pos_ang_msg.angle= 0.0;
+
+    hedge_pos_msg.address= 0;
+    hedge_pos_msg.timestamp_ms = 0;
+    hedge_pos_msg.x_m = 0.0;
+    hedge_pos_msg.y_m = 0.0;
+    hedge_pos_msg.z_m = 0.0;
+    hedge_pos_msg.flags = (1<<0);// 'data not available' flag
+
+    hedge_pos_noaddress_msg.timestamp_ms = 0;
+    hedge_pos_noaddress_msg.x_m = 0.0;
+    hedge_pos_noaddress_msg.y_m = 0.0;
+    hedge_pos_noaddress_msg.z_m = 0.0;
+    hedge_pos_noaddress_msg.flags = (1<<0);// 'data not available' flag
+
+    beacon_pos_msg.address= 0;
+    beacon_pos_msg.x_m = 0.0;
+    beacon_pos_msg.y_m = 0.0;
+    beacon_pos_msg.z_m = 0.0;
+}
+
+void MarvelmindNavigation::main_loop()
+{
+
+}
+
+void MarvelmindNavigation::createPublishers()
+{
+    rclcpp::QoS qos(rclcpp::QoSInitialization::from_rmw(rmw_qos_profile_sensor_data));
+
+    hedge_pos_ang_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePosAng>(HEDGE_POSITION_WITH_ANGLE_TOPIC_NAME, qos);
+    hedge_pos_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePosA>(HEDGE_POSITION_ADDRESSED_TOPIC_NAME, qos);
+    hedge_pos_noaddress_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePos>(HEDGE_POSITION_ADDRESSED_TOPIC_NAME, qos);
+
+    beacons_pos_publisher_ = this->create_publisher<marvelmind_interfaces::msg::BeaconPosA>(BEACONS_POSITION_ADDRESSED_TOPIC_NAME, qos);
+
+    hedge_imu_raw_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgeImuRaw>(HEDGE_IMU_RAW_TOPIC_NAME, qos);
+    hedge_imu_fusion_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgeImuFusion>(HEDGE_IMU_FUSION_TOPIC_NAME, qos);
+
+    beacon_distance_publisher_ = this->create_publisher<marvelmind_interfaces::msg::BeaconDistance>(BEACON_RAW_DISTANCE_TOPIC_NAME, qos);
+
+    hedge_telemetry_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgeTelemetry>(HEDGE_TELEMETRY_TOPIC_NAME, qos);
+    hedge_quality_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgeQuality>(HEDGE_QUALITY_TOPIC_NAME, qos);
+
+    marvelmind_waypoint_publisher_ = this->create_publisher<marvelmind_interfaces::msg::MarvelmindWaypoint>(MARVELMIND_WAYPOINT_TOPIC_NAME, qos);
 }
 
 
+int main(int argc, char * argv[])
+{
+    // force flush of the stdout buffer.
+    // this ensures a correct sync of all prints
+    // even when executed simultaneously within the launch file.
+    setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+
+    rclcpp::init(argc, argv);
+
+    rclcpp::executors::SingleThreadedExecutor exe;
+
+    std::shared_ptr<MarvelmindNavigation> lc_node =
+            std::make_shared<MarvelmindNavigation>("lc_marvel2", argc, argv);
+
+    exe.add_node(lc_node->get_node_base_interface());
+
+    exe.spin();
+
+    rclcpp::shutdown();
+
+    return 0;
+}
 

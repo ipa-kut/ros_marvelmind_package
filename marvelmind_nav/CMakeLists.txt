@@ -22,6 +22,7 @@ find_package(std_msgs REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
 find_package(marvelmind_interfaces REQUIRED)
+find_package(rmw REQUIRED) #QoS
 
 # Declare includes and libraries
 include_directories(include)
@@ -32,17 +33,26 @@ add_library(marvelmind_nav_lib
 
 # Executables
 add_executable(hedge_rcv_bin src/hedge_rcv_bin.cpp
-                             src/marvelmind_hedge.c
-                             src/marvelmind_navigation.cpp)
+                             src/marvelmind_hedge.c)
 ament_target_dependencies(hedge_rcv_bin rclcpp std_msgs marvelmind_interfaces)
 target_link_libraries(hedge_rcv_bin
   ${rclcpp_lifecycle_LIBRARIES}
   ${std_msgs_LIBRARIES}
 )
 
+add_executable(marvelmind_nav src/marvelmind_navigation.cpp
+                              src/marvelmind_hedge.c)
+ament_target_dependencies(marvelmind_nav rclcpp std_msgs marvelmind_interfaces)
+target_link_libraries(marvelmind_nav
+  ${rclcpp_lifecycle_LIBRARIES}
+  ${std_msgs_LIBRARIES}
+)
+
+
 # Installation
 install(TARGETS
   hedge_rcv_bin
+  marvelmind_nav
   DESTINATION lib/${PROJECT_NAME})
 
 
