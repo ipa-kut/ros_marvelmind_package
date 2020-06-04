@@ -64,6 +64,8 @@ private:
   int argc_;
   char **argv_;
   std::shared_ptr<rclcpp::TimerBase> timer_;
+  bool are_publishers_active_;
+  uint8_t beaconReadIterations;
 
   struct MarvelmindHedge * hedge= NULL;
   struct timespec ts;
