@@ -25,7 +25,7 @@ def generate_launch_description(argv=sys.argv[1:]):
 
     # Prepare the marvel node.
     marvel_node = launch_ros.actions.LifecycleNode(
-        node_name='marvelmind_nav', package='marvelmind_nav', node_executable='marvelmind_nav', output='screen')
+        node_name='marvelmind_nav', package='marvelmind_nav', node_executable='marvelmind_nav', output='screen', arguments=['/dev/ttyACM1','9600'])
 
     # When the marvel reaches the 'inactive' state, make it take the 'activate' transition.
     register_event_handler_for_marvel_reaches_inactive_state = launch.actions.RegisterEventHandler(

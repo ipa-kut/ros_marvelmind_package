@@ -32,14 +32,6 @@ add_library(marvelmind_nav_lib
 )
 
 # Executables
-add_executable(hedge_rcv_bin src/hedge_rcv_bin.cpp
-                             src/marvelmind_hedge.c)
-ament_target_dependencies(hedge_rcv_bin rclcpp std_msgs marvelmind_interfaces)
-target_link_libraries(hedge_rcv_bin
-  ${rclcpp_lifecycle_LIBRARIES}
-  ${std_msgs_LIBRARIES}
-)
-
 add_executable(marvelmind_nav src/marvelmind_navigation.cpp
                               src/marvelmind_hedge.c)
 ament_target_dependencies(marvelmind_nav rclcpp std_msgs marvelmind_interfaces)
@@ -51,7 +43,6 @@ target_link_libraries(marvelmind_nav
 
 # Installation
 install(TARGETS
-  hedge_rcv_bin
   marvelmind_nav
   DESTINATION lib/${PROJECT_NAME})
 

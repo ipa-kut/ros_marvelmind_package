@@ -89,11 +89,14 @@ int MarvelmindNavigation::hedgeReceivePrepare()
         RCLCPP_INFO(get_logger(),"Error: Unable to create MarvelmindHedge");
         return -1;
     }
+
     hedge->ttyFileName=ttyFileName;
     hedge->baudRate= baudRate;
     hedge->verbose=true; // show errors and warnings
     hedge->anyInputPacketCallback= semCallback;
-    startMarvelmindHedge (hedge);
+
+    RCLCPP_INFO_STREAM(get_logger(),"Creating a connection at: " << argv_[1] << " with baud rate: " << argv_[2]);
+    startMarvelmindHedge(hedge);
     return 1;
 }
 
