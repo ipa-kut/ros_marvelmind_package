@@ -25,6 +25,7 @@ DAMAGE.
 */
 
 #include "marvelmind_nav/marvelmind_navigation.hpp"
+#include <memory>
 
 uint32_t MarvelmindNavigation::hedge_timestamp_prev = 0;
 static sem_t *sem;
@@ -555,7 +556,6 @@ void MarvelmindNavigation::main_loop()
         if(are_publishers_active_)
             marvelmind_waypoint_publisher_->publish(marvelmind_waypoint_msg);
     }
-
 }
 
 
@@ -564,6 +564,8 @@ int main(int argc, char * argv[])
     // force flush of the stdout buffer.
     // this ensures a correct sync of all prints
     // even when executed simultaneously within the launch file.
+
+
     setvbuf(stdout, NULL, _IONBF, BUFSIZ);
 
     rclcpp::init(argc, argv);
