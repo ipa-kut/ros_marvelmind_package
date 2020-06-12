@@ -11,7 +11,14 @@ import launch
 import launch.actions
 import launch.events
 
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration, ThisLaunchFileDir
+from launch import LaunchDescription
 from launch_ros import get_default_launch_description
+
+from launch.launch_context import LaunchContext
+
 import launch_ros.actions
 import launch_ros.events
 import launch_ros.events.lifecycle
@@ -22,10 +29,22 @@ def generate_launch_description(argv=sys.argv[1:]):
     """Run lifecycle nodes via launch."""
     ld = launch.LaunchDescription()
 
+    port = LaunchConfiguration('port')
+    declare_port_cmd = DeclareLaunchArgument(
+        'port',
+        default_value='/dev/ttyACM0',
+        description='Port for serial comm')
+    ld.add_action(declare_port_cmd)
 
+    context = LaunchContext()
+    print("Port is: {}".format(port.perform(context)))
     # Prepare the marvel node.
     marvel_node = launch_ros.actions.LifecycleNode(
-        node_name='marvelmind_nav', package='marvelmind_nav', node_executable='marvelmind_nav', output='screen', arguments=['/dev/ttyACM1','9600'])
+        node_name='marvelmind_nav', 
+        package='marvelmind_nav', 
+        node_executable='marvelmind_nav', 
+        output='screen',
+        arguments=['/dev/ttyACM0','9600'])
 
     # When the marvel reaches the 'inactive' state, make it take the 'activate' transition.
     register_event_handler_for_marvel_reaches_inactive_state = launch.actions.RegisterEventHandler(
@@ -34,7 +53,8 @@ def generate_launch_description(argv=sys.argv[1:]):
             entities=[
                 launch.actions.LogInfo(
                     msg="node 'marvelmind_nav' reached the 'inactive' state, 'activating'."),
-                launch.actions.EmitEvent(event=launch_ros.events.lifecycle.ChangeState(
+                launch.actions.EmitEvent(
+                    event=launch_ros.events.lifecycle.ChangeState(
                     lifecycle_node_matcher=launch.events.matches_action(marvel_node),
                     transition_id=lifecycle_msgs.msg.Transition.TRANSITION_ACTIVATE,
                 )),
@@ -65,6 +85,7 @@ def generate_launch_description(argv=sys.argv[1:]):
     ld.add_action(register_event_handler_for_marvel_reaches_active_state)
     ld.add_action(marvel_node)
     ld.add_action(emit_event_to_request_that_marvel_does_configure_transition)
+    
 
     # print('Starting introspection of launch description...')
     # print('')
