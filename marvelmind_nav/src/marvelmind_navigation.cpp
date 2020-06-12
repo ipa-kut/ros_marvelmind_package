@@ -385,7 +385,7 @@ void MarvelmindNavigation::createPublishers()
 
     hedge_pos_ang_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePosAng>(HEDGE_POSITION_WITH_ANGLE_TOPIC_NAME, qos);
     hedge_pos_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePosA>(HEDGE_POSITION_ADDRESSED_TOPIC_NAME, qos);
-    hedge_pos_noaddress_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePos>(HEDGE_POSITION_ADDRESSED_TOPIC_NAME, qos);
+    hedge_pos_noaddress_publisher_ = this->create_publisher<marvelmind_interfaces::msg::HedgePos>(HEDGE_POSITION_TOPIC_NAME, qos);
 
     beacons_pos_publisher_ = this->create_publisher<marvelmind_interfaces::msg::BeaconPosA>(BEACONS_POSITION_ADDRESSED_TOPIC_NAME, qos);
 
@@ -404,11 +404,11 @@ void MarvelmindNavigation::main_loop()
 {
     //    RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Running main loop at " << this->now().seconds() );
 
-//    if (hedge->terminationRequired)
-//    {
-//        RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Shutdown called from hedge->terminationRequired at " << now().seconds());
-//        this->shutdown();
-//    }
+    if (hedge->terminationRequired)
+    {
+        RCLCPP_INFO_STREAM(get_logger(),std::fixed << "Shutdown called from hedge->terminationRequired at " << now().seconds());
+        this->shutdown();
+    }
 
     if (clock_gettime(CLOCK_REALTIME, &ts) == -1)
     {
