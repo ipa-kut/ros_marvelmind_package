@@ -6,6 +6,7 @@
   <description>Metapackage for Marvelmind ROS2</description>
   <maintainer email="tejas.kumar.shastha@ipa.fraunhofer.de">ipa-kut</maintainer>
   <license>BSD</license>
+  <url type="website">http://marvelmind.com</url>
 
   <exec_depend>marvelmind_interfaces</exec_depend>
   <exec_depend>marvelmind_nav</exec_depend>
